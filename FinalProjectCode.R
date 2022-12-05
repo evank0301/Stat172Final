@@ -1,6 +1,7 @@
 #Installing packages as we need them
 rm(list = ls())
 library(dplyr)
+library(ggplot2)
 
 #Read in the data and examine the columns
 fp = read.csv("Data/pbp-2021.csv", stringsAsFactors = TRUE)
@@ -45,8 +46,8 @@ table(fp_cleaned$RushDirection)
 #there is an inherent ordering in kitchen qualities that we'll want
 #to show up in plots, let's respect that
 fp_cleaned$RushDirection = factor(fp_cleaned$RushDirection,
-                            levels = c("NORUSH", "LEFT END", "LEFT TACKLE", "LEFT GUARD","CENTER", "RIGHT GUARD", "RIGHT END", "RIGHT TACKLE"), 
-                            labels = c( "No Rush", "Left End", "Left Tackle", "Left Guard", "Center", "Right Guard", "Right End", "Right Tackle"))
+                            levels = c("NORUSH", "LEFT END", "LEFT TACKLE", "LEFT GUARD","CENTER", "RIGHT GUARD", "RIGHT TACKLE", "RIGHT END"), 
+                            labels = c( "No Rush", "Left End", "Left Tackle", "Left Guard", "Center", "Right Guard", "Right Tackle", "Right End"))
 table(fp_cleaned$RushDirection)
 
 #Modify blanks in pass type to NOPASS
@@ -90,72 +91,55 @@ table(fp_cleaned$PassType)
 #Right Penalty -> short right, we know it was a pass to the right based on play description, we went with the more common of the two
 #Right TO -> short right, play description said it was a two yard touchdown
 
+#We decided to remove all ocurences of plays that were not Rushes, Passes, Two Pt Conversions, or Scrambles because
+#There were some play types in the data that the Offensive Coordinator would never call (ie. sack / fumble / punt)
+fp_cleaned$PlayType = as.character(fp_cleaned$PlayType)
+fp_cleaned = subset(fp_cleaned, PlayType == c("RUSH", "PASS", "SCRAMBLE", "TWO-POINT CONVERSION"))
 
-#Plots with Yards
-#Scores based on how many yards the play gained
-ggplot(data = fp_cleaned)+
-  geom_histogram(aes(x=Yards, fill = EndzoneScore), position = "fill", binwidth = 5)+
-  labs(x = "Yards Gained on the Play", y = "Play scored")+
-  ggtitle("Endzone scores on how long the play was")+
-  scale_fill_brewer("Scored", palette = "YlOrRd")
-#Most interesting thing on this histogram is that there are plays that scored
-#touchdowns with negative yards gained on the play. Is this counting defensive touchdwons?
-#if that is the case then a play of more than -20 yards would have happened
+table(fp_cleaned$PlayType)
 
-#plot of yards gained over pass play type
-ggplot(data = fp_cleaned)+
-  geom_histogram(aes(x=Yards, fill = PassType), position = "fill", binwidth = 5)+
-  labs(x = "Yards Gained on Pass Plays", y = "Pass Type")+
-  ggtitle("Yards gained based on Pass play type")+
-  scale_fill_brewer("Pass Type", palette = "YlOrRd")
-#Of all the deep pass pays, it seems like deep right is the most effective
-#in some areas deep sleep also seems to work well. Ironically from about 77-85
-#yard lines, short left passes seem oddly effective. Although that may be due to a 
-#small sample size and the only pass play(s) to score from around 100 yards is 
-#short right
+fp_cleaned$PlayType = factor(fp_cleaned$PlayType,
+                                levels = c("PASS", "RUSH", "SCRAMBLE", "TWO-POINT CONVERSION"),
+                                labels = c("Pass", "Rush", "Scramble", "Two Point Conversion"))
 
-#plot of yards gained over rush direction 
-ggplot(data = fp_cleaned)+
-  geom_histogram(aes(x=Yards, fill = RushDirection), position = "fill", binwidth = 5)+
-  labs(x = "Yards Gained", y = "Rush Direction")+
-  ggtitle("Yards gained based on Rush Direction")+
-  scale_fill_brewer("Rush \nDirection", palette = "YlOrRd")
-#It seems that the majority of plays for each amount of yards gained are not rushes
-#at all. It also seems the majority of rush plays are about 3-5 yards.The longest
-#runs (55+ seem to come from rushes following the left side)
+#Evan's Plots
+ggplot(data = fp_cleaned) +
+  geom_bar(aes(x = PlayType))
 
-#PlayType
-#Score by play type
-ggplot(data = fp_cleaned)+
-  geom_bar(aes(x=PlayType, fill = EndzoneScore), position = "fill")+
-  labs(x = "Type of Play", y = "Play scored")+
-  coord_flip()+
-  ggtitle("Endzone scores based on Play Type")+
-  scale_fill_brewer("Scored", palette = "YlOrRd")
-#Two-point conversion are nearly 50% successful in getting into the end zone,
-#Of all pass and rush plays, about 5% truly end in a score. Exception and *blank*
-#both have interestily high score percentages, would like to maybe figure out what that
-#is about
+#Make a plot of the distribution of RushDirection.
+#I chose to exclude the No Rush level because it overshadowed all of the other values
+fp_cleaned %>%
+  filter(RushDirection != "No Rush") %>%
+  ggplot(aes(x = RushDirection)) +
+  geom_bar()
+
+#Examine the above plot again, but fill based on the play scoring in the endzone
+fp_cleaned %>%
+  filter(RushDirection != "No Rush") %>%
+  ggplot(aes(x = RushDirection, fill = EndzoneScore)) +
+  labs(x = "Rush Direction", y = "Frequency") +
+  ggtitle("Distribution of Rush Directions Accross the Offensive Line") + 
+  scale_fill_grey("Outcome of \nthe Play") +
+  geom_bar()
 
 
-#YardLine
-#Score by yard line
-ggplot(data = fp_cleaned)+
-  geom_histogram(aes(x=YardLine, fill = EndzoneScore), position = "fill", binwidth = 5)+
-  labs(x = "Yard Line Play Started On", y = "Play scored")+
-  ggtitle("Endzone Scores Based on Where the Play Started")+
-  scale_fill_brewer("Scored", palette = "YlOrRd")
-#The interesting aspect of this graph is that a large portion of plays run from
-#inside about the 10 yard line score. There is also an interesting increase at about the 
-#20 yard line compared to about the 15 yard line, the trend almost seems exponential
+#Get a feel for passing frequencies
+fp_cleaned %>%
+  filter(PassType != "No Pass") %>%
+  ggplot(aes(x = PassType)) + 
+  geom_bar()
 
-#Time
-#Score by time during the game
-ggplot(data = fp_cleaned)+
-  geom_histogram(aes(x=TimeOfPlay, fill = EndzoneScore), position = "fill", binwidth = 5)+
-  labs(x = "Time of Play", y = "Play scored")+
-  ggtitle("Endzone Scores Based on When the Play was Ran")+
-  scale_fill_brewer("Scored", palette = "YlOrRd")
-#There does not seem to be a certain time of the game that allows for more scores
-#except for the very end of overtime where teams my be trying to just tie the game instead
-#of winning it
+#Group by scoring again
+fp_cleaned %>%
+  filter(PassType != "No Pass") %>%
+  ggplot(aes(x = PassType, fill = EndzoneScore), position = "fill") + 
+  labs(x = "Pass Type", y = "Frequency") +
+  ggtitle("Distribution of Pass Types on Passing Plays") +
+  scale_fill_grey("Outcome of \nthe Play") +
+  geom_bar()
+
+
+
+
+#STEP 2: Begin model building
+
