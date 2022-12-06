@@ -2,8 +2,12 @@
 rm(list = ls())
 library(dplyr)
 library(ggplot2)
+library(rpart)
+library(rpart.plot)
+library(pROC)
+library(randomForest)
 
-#Read in the data and examine the columns
+#Read the data for our project into R so we can examine the columns
 fp = read.csv("Data/pbp-2021.csv", stringsAsFactors = TRUE)
 str(fp)
 
@@ -17,17 +21,22 @@ str(fp)
 fp_cleaned = subset(fp, OffenseTeam != "")
 
 #The original csv file included some blank columns in between the columns containing
-#actual values, these were removed. We also removed the game description, identifier, and 
-#date because all of the games took place in the same season. TeamWin just had all 0s in it and was removed.
-#The challenger column only had NAs in it and was dropped as well
+#actual values, these columns (X, X.1, and X.3) were removed. 
+#We also removed the GameId, GameDate, SeasonYear, and Description colums because they contained
+#Data that was not relevant to our analysis. All of the observations are from the same season
+#TeamWin had all 0s in it and was removed.
+#The Challenger column only had NAs in it and was dropped as well
 #NextScore Had all 0s and was removed
 #IsMeasurement is all 0s and was removed
 #We determined that OffenseTeam and DefenseTeam weren't relevant and were removed.
-#We dropped IsRush and IsPass because it was redundant information with the PlayType column
-
+#We dropped IsRush, IsPass, and IsTwoPointConversion because it was redundant information with the PlayType column
+#We dropped PenaltyTeam and PenaltyType because these are extranious pieces of information for our model
+#We dropped YardLineFixed and YardLineDirection because there is another YardLine variable that contains this information
+#We dropped IsSack because all of the values were 0
+#Propose drop of IsIncomplete because it is redundant with pass plays that gain 0 yds.
 fp_cleaned = subset(fp_cleaned, select = -c(X, X.1, X.2, X.3, GameId, GameDate, SeasonYear, Description, TeamWin, 
                                             Challenger, NextScore, OffenseTeam, DefenseTeam, IsRush, IsPass,
-                                            PenaltyTeam, PenaltyType, YardLineFixed,YardLineDirection, IsMeasurement, IsTwoPointConversion))
+                                            PenaltyTeam, PenaltyType, YardLineFixed,YardLineDirection, IsMeasurement, IsTwoPointConversion, IsSack, IsIncomplete))
 
 #We also decided to combine the quarter, minute, and second variables into one, larger,
 #time variable. This variable takes the form of Minutes.seconds
@@ -37,39 +46,22 @@ fp_cleaned = subset(fp_cleaned, select = -c(Quarter, Minute, Second))
 
 
 #We decided to impute values of NOPASS when there was a blank in PassType and NORUSH when there was a blank in RushDirection
-fp_cleaned$RushDirection = as.character(fp_cleaned$RushDirection)
+
 #modify blanks in RushDirection to NORUSH
+fp_cleaned$RushDirection = as.character(fp_cleaned$RushDirection)
 fp_cleaned$RushDirection[fp_cleaned$RushDirection == ""] = "NORUSH"
 #see if it worked
 table(fp_cleaned$RushDirection)
-#let's turn it into a factor - Ordered Factor
-#there is an inherent ordering in kitchen qualities that we'll want
-#to show up in plots, let's respect that
+#Order the factors for RushDirection based on the Offensive line
 fp_cleaned$RushDirection = factor(fp_cleaned$RushDirection,
                             levels = c("NORUSH", "LEFT END", "LEFT TACKLE", "LEFT GUARD","CENTER", "RIGHT GUARD", "RIGHT TACKLE", "RIGHT END"), 
                             labels = c( "No Rush", "Left End", "Left Tackle", "Left Guard", "Center", "Right Guard", "Right Tackle", "Right End"))
 table(fp_cleaned$RushDirection)
 
 #Modify blanks in pass type to NOPASS
-
-
-#We are choosing to look at IsTouchdown for our y variable, after deliberation, we decided to just look at scoring plays
-
-#Make TD var a factor Include 2pt convs in this as well 
-
-fp_cleaned = fp_cleaned %>%
-  mutate(EndzoneScore = ifelse(IsTwoPointConversionSuccessful == 1 | IsTouchdown == 1, 1, 0))
-
-fp_cleaned$EndzoneScore = factor(fp_cleaned$EndzoneScore,
-                                 levels = c(1, 0),
-                                 labels = c("Score" ,"No Score"))
-table(fp_cleaned$EndzoneScore)                                 
-         
-#Drop IsNoPlay where it is 1 and then remove the column
-fp_cleaned = subset(fp_cleaned, select = -c(IsTwoPointConversionSuccessful, IsTouchdown))
-
 fp_cleaned$PassType = as.character(fp_cleaned$PassType)
 fp_cleaned$PassType[fp_cleaned$PassType == ""] = "NOPASS"
+fp_cleaned$PassType[is.na(fp_cleaned$PassType)] = "NOPASS"
 fp_cleaned$PassType[fp_cleaned$PassType == "BACK TO"] = "NOPASS"
 fp_cleaned$PassType[fp_cleaned$PassType == "INTENDED FOR"] = "NOPASS"
 fp_cleaned$PassType[fp_cleaned$PassType == "LEFT TO"] = "SHORT LEFT"
@@ -77,32 +69,44 @@ fp_cleaned$PassType[fp_cleaned$PassType == "MIDDLE TO"] = "SHORT MIDDLE"
 fp_cleaned$PassType[fp_cleaned$PassType == "NOT LISTED"] = "NOPASS"
 fp_cleaned$PassType[fp_cleaned$PassType == "RIGHT TO"] = "SHORT RIGHT"
 fp_cleaned$PassType[fp_cleaned$PassType == "RIGHT. PENALTY"] = "SHORT RIGHT"
+#BACK TO is not a pass it was a backwards lateral during a punt based on reading the description, it becomes NOPASS
+#INTENDED FOR becomes NO PASS, the play was a fumble
+#LEFT TO becomes SHORT LEFT, it was an 8 yard gain to the left
+#MIDDLE TO becomes SHORT MIDDLE, it was a pass for 14 yards
+#NOT LISTED becomes NO PAS, it was a fumble and bad play 
+#RIGHT TO becomes SHORT RIGHT play description said it was a two yard touchdown
+#RIGHT. PENALTY becomes SHORT RIGHT, we know it was a pass to the right based on play description, we went with the more common of the two
+
 table(fp_cleaned$PassType)
 fp_cleaned$PassType = factor(fp_cleaned$PassType,
-                                  levels = c("NO PASS", "DEEP LEFT", "SHORT LEFT", "DEEP MIDDLE", "SHORT MIDDLE", "DEEP RIGHT", "SHORT RIGHT"),
-                                  labels = c("No Pass", "Deep Left", "Short Left", "Deep Middle", "Short Middle", "Deep Right", "Short Right")
-                                  )
+                             levels = c("NOPASS", "DEEP LEFT", "SHORT LEFT", "DEEP MIDDLE", "SHORT MIDDLE", "DEEP RIGHT", "SHORT RIGHT"),
+                             labels = c("No Pass", "Deep Left", "Short Left", "Deep Middle", "Short Middle", "Deep Right", "Short Right")
+)
 table(fp_cleaned$PassType)
-#Left TO becomes SHORT LEFT, it was an 8 yard gain to the left
-#INTENDED FOR becomes NO PASS, the play was a fumble
-#BACK TO is not a pass it was a backwards lateral during a punt based on reading the description, it becomes no pass
-#NOT LISTED WAS a fumble and bad play -> no pass
-#MIDDLE TO was a pass for 14 yards, not very long short middle
-#Right Penalty -> short right, we know it was a pass to the right based on play description, we went with the more common of the two
-#Right TO -> short right, play description said it was a two yard touchdown
 
-#We decided to remove all ocurences of plays that were not Rushes, Passes, Two Pt Conversions, or Scrambles because
-#There were some play types in the data that the Offensive Coordinator would never call (ie. sack / fumble / punt)
+#We are choosing to look at IsTouchdown for our y variable, after deliberation, we decided to just look at scoring plays in the endzone
+#Make TD var a factor Include 2pt convs in this as well 
+fp_cleaned = fp_cleaned %>%
+  mutate(EndzoneScore = ifelse(IsTwoPointConversionSuccessful == 1 | IsTouchdown == 1, 1, 0))
+fp_cleaned$EndzoneScore = factor(fp_cleaned$EndzoneScore,
+                                 levels = c(1, 0),
+                                 labels = c("Score" ,"No Score"))
+table(fp_cleaned$EndzoneScore)                                 
+fp_cleaned = subset(fp_cleaned, select = -c(IsTwoPointConversionSuccessful, IsTouchdown))
+
+#When we were investigating our data some more in class on 12/5, we ran across some issues that would arise if we didn't
+#Take action against them. The PlayType variable has many fields that no NFL OC would ever call (sack / fumble / punt) we
+#Decided that these levels make no sense to include in the data because they would lead to complete separation later (it is unlikely if not impossible to score on these plays)
+#We decided to remove all occurrences of plays that were not Rushes, Passes, Two Pt Conversions, or Scrambles because
 fp_cleaned$PlayType = as.character(fp_cleaned$PlayType)
 fp_cleaned = subset(fp_cleaned, PlayType == c("RUSH", "PASS", "SCRAMBLE", "TWO-POINT CONVERSION"))
-
 table(fp_cleaned$PlayType)
-
 fp_cleaned$PlayType = factor(fp_cleaned$PlayType,
                                 levels = c("PASS", "RUSH", "SCRAMBLE", "TWO-POINT CONVERSION"),
                                 labels = c("Pass", "Rush", "Scramble", "Two Point Conversion"))
 
-#Evan's Plots
+
+#Exploratory Plots For Rush and Pass Type----
 ggplot(data = fp_cleaned) +
   geom_bar(aes(x = PlayType))
 
@@ -141,5 +145,85 @@ fp_cleaned %>%
 
 
 
-#STEP 2: Begin model building
+#Initial Random Forest ----
+RNGkind(sample.kind = "default")
+set.seed(172172) 
 
+#I am using an 80/20 split for training and testing, this is pretty standard
+train.idx = sample(x = 1:nrow(fp_cleaned), size = .8*nrow(fp_cleaned))
+
+#Create training data
+train.df = fp_cleaned[train.idx, ]
+#create testing data
+test.df = fp_cleaned[-train.idx, ]
+
+
+### TREE FITTING ----
+#This is just one tree because I wanted to see what it looked like
+#set seed before we fit the tree
+set.seed(172172172)
+
+#Build the tree with the training information
+initialTree = rpart(EndzoneScore ~ ., 
+              data = train.df,
+              method = 'class') 
+
+rpart.plot(initialTree)
+
+# FOREST FITTING ----
+set.seed(172172)
+
+#Construct an initial forest with 10000 trees
+fpForest = randomForest(EndzoneScore ~.,
+                        data = train.df,
+                        ntrees = 10000)
+
+#Examine how this initial forest performed.
+fpForest
+#Pretty good! There is only a 2.12% OOB error rate, which is not bad
+#Attempt to optimize
+
+#One value for each x variable
+mtry = c(1:18)
+
+#Make a dataframe for different OOB error rates
+keeps = data.frame(m = rep(NA, length(mtry)),
+                   OOB_error_rate = rep(NA, length(mtry)))
+
+for(idx in 1:length(mtry)){
+  print(paste0("Fitting m = ", mtry[idx]))
+  tempforest = randomForest(EndzoneScore ~.,
+                            data = train.df,
+                            ntree = 10000,
+                            mtry = mtry[idx])
+  keeps[idx, "m"] = mtry[idx]
+  keeps[idx, "OOB_error_rate"] = mean(predict(tempforest) != train.df$EndzoneScore)
+}
+
+ggplot(data = keeps) + 
+  geom_line(aes(x = m, y = OOB_error_rate))
+
+#Using mtry = 12 resulted in the lowest OO
+min(keeps$OOB_error_rate)
+
+#TUNED FOREST
+tunedFpForest = randomForest(EndzoneScore ~.,
+                             data = train.df,
+                             ntree = 10000,
+                             mtry = 12,
+                             importance = TRUE)
+
+#Examine the new forest
+tunedFpForest
+
+
+#ROC CURVE
+pi_hat = predict(tunedFpForest, test.df, type = "prob")[,"Score"]
+rocCurve = roc(response = test.df$EndzoneScore,
+               predictor = pi_hat,
+               levels = c("No Score", "Score"))
+plot(rocCurve, print.thres = "best", print.auc = TRUE)
+#AUC = .997
+#Pi star = .110
+#Sensitivity = .985
+#Specificity = .982                   
