@@ -8,7 +8,7 @@ library(pROC)
 library(randomForest)
 
 #Read the data for our project into R so we can examine the columns
-fp = read.csv("Data/pbp-2021.csv", stringsAsFactors = TRUE)
+fp = read.csv("pbp-2021.csv", stringsAsFactors = TRUE)
 str(fp)
 
 
@@ -54,8 +54,8 @@ fp_cleaned$RushDirection[fp_cleaned$RushDirection == ""] = "NORUSH"
 table(fp_cleaned$RushDirection)
 #Order the factors for RushDirection based on the Offensive line
 fp_cleaned$RushDirection = factor(fp_cleaned$RushDirection,
-                            levels = c("NORUSH", "LEFT END", "LEFT TACKLE", "LEFT GUARD","CENTER", "RIGHT GUARD", "RIGHT TACKLE", "RIGHT END"), 
-                            labels = c( "No Rush", "Left End", "Left Tackle", "Left Guard", "Center", "Right Guard", "Right Tackle", "Right End"))
+                                  levels = c("NORUSH", "LEFT END", "LEFT TACKLE", "LEFT GUARD","CENTER", "RIGHT GUARD", "RIGHT TACKLE", "RIGHT END"), 
+                                  labels = c( "No Rush", "Left End", "Left Tackle", "Left Guard", "Center", "Right Guard", "Right Tackle", "Right End"))
 table(fp_cleaned$RushDirection)
 
 #Modify blanks in pass type to NOPASS
@@ -102,8 +102,8 @@ fp_cleaned$PlayType = as.character(fp_cleaned$PlayType)
 fp_cleaned = subset(fp_cleaned, PlayType == c("RUSH", "PASS", "SCRAMBLE", "TWO-POINT CONVERSION"))
 table(fp_cleaned$PlayType)
 fp_cleaned$PlayType = factor(fp_cleaned$PlayType,
-                                levels = c("PASS", "RUSH", "SCRAMBLE", "TWO-POINT CONVERSION"),
-                                labels = c("Pass", "Rush", "Scramble", "Two Point Conversion"))
+                             levels = c("PASS", "RUSH", "SCRAMBLE", "TWO-POINT CONVERSION"),
+                             labels = c("Pass", "Rush", "Scramble", "Two Point Conversion"))
 
 
 #Exploratory Plots For Rush and Pass Type (Evan)----
@@ -246,8 +246,8 @@ set.seed(172172172)
 
 #Build the tree with the training information
 initialTree = rpart(EndzoneScore ~ ., 
-              data = train.df,
-              method = 'class') 
+                    data = train.df,
+                    method = 'class') 
 
 rpart.plot(initialTree)
 
@@ -308,4 +308,73 @@ plot(rocCurve, print.thres = "best", print.auc = TRUE)
 #Pi star = .110
 #Sensitivity = .985
 #Specificity = .982                   
+
+fp_cleaned$score_bin = ifelse(fp_cleaned$EndzoneScore == "Score", 1, 0)
+#First model, adding YardLine because it was the #1 variable on variable importance
+m1 = glm(score_bin ~ YardLine, data = fp_cleaned,
+         family =  binomial(link = "logit"))
+AIC(m1) #1940.69
+
+
+#Add SeriesFirstDown
+m2 = glm(score_bin~YardLine + SeriesFirstDown, data = fp_cleaned,
+         family = binomial(link = "logit"))
+AIC(m2) #1331.847
+
+
+#Add Yards
+m3 = glm(score_bin~YardLine + SeriesFirstDown + Yards, data = fp_cleaned,
+         family = binomial(link = "logit"))
+AIC(m3) #1004.569
+
+
+#Add IsPenalty
+m4 = glm(score_bin~YardLine + SeriesFirstDown + Yards +IsPenalty, data = fp_cleaned,
+         family = binomial(link = "logit"))
+AIC(m4) #936.3637
+
+
+#Add PenaltyYards
+m5 = glm(score_bin~YardLine + SeriesFirstDown + Yards +IsPenalty +
+           PenaltyYards, data = fp_cleaned,
+         family = binomial(link = "logit"))
+AIC(m5) #937.858 Increase from the past add
+
+
+#Add ToGo
+m6 = glm(score_bin~YardLine + SeriesFirstDown + Yards +IsPenalty +
+           PenaltyYards +ToGo, data = fp_cleaned,
+         family = binomial(link = "logit"))
+AIC(m6) #915.7798 Increase from the past add
+
+
+#Add PassType
+m7 = glm(score_bin~YardLine + SeriesFirstDown + Yards +IsPenalty +
+           PenaltyYards +ToGo+PassType, data = fp_cleaned,
+         family = binomial(link = "logit"))
+AIC(m7) #912.9182 Increase from the past add
+
+
+#Add IsPenaltyAccepted
+m8 = glm(score_bin~YardLine + SeriesFirstDown + Yards +IsPenalty +
+           PenaltyYards +ToGo+PassType+IsPenaltyAccepted, data = fp_cleaned,
+         family = binomial(link = "logit"))
+AIC(m8) #904.94
+summary(m8)
+
+#Add IsNoPlay
+m9 = glm(score_bin~YardLine + SeriesFirstDown + Yards +IsPenalty +
+           PenaltyYards +ToGo+PassType+IsPenaltyAccepted +IsNoPlay, data = fp_cleaned,
+         family = binomial(link = "logit"))
+AIC(m9) #906.9086 #larger than model 8
+
+m10 = glm(score_bin~YardLine + SeriesFirstDown + Yards +IsPenalty +
+           PenaltyYards +ToGo+PassType+IsPenaltyAccepted +IsNoPlay + RushDirection, data = fp_cleaned,
+         family = binomial(link = "logit"))
+AIC(m10) #905.0016 #Both this an the previous are larger than model 8
+
+final_model = glm(score_bin~YardLine + SeriesFirstDown + Yards +IsPenalty +
+                    PenaltyYards +ToGo+PassType+IsPenaltyAccepted, data = fp_cleaned,
+                  family = binomial(link = "logit"))
+summary(final_model)
 
