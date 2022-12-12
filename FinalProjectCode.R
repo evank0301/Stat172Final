@@ -391,7 +391,7 @@ ggplot(data = fp_cleaned)+
   geom_histogram(aes(x=Yards, fill = EndzoneScore), position = "fill", binwidth = 5)+
   labs(x = "Total Yards gained on Play", y = "Play scored")+
   ggtitle("Endzone Scores Based on how Many Yards were Gained")+
-  scale_fill_brewer("Scored", palette = "BuGr")
+  scale_fill_brewer("Scored", palette = "BuGn")
 
 
 ##Is Penalty plots
@@ -399,10 +399,12 @@ ggplot(data = fp_cleaned)+
   geom_bar(aes(x= IsPenalty, fill = EndzoneScore), position = "fill")+
   labs(x = "Penalty Happened", y = "Play scored")+
   ggtitle("Endzone Scores Based on if a Penalty Happened")+
-  scale_fill_brewer("Scored", palette = "BuGr")
+  scale_fill_brewer("Scored", palette = "BuGn")
 
+fp_cleaned = fp_cleaned %>%
+  mutate(IsPenalty= ifelse(IsPenalty==1, "Penalty", "No Penalty"))
 ggplot(data = fp_cleaned)+
   geom_bar(aes(x= IsPenalty, fill = PassType),position = "fill")+
   labs(x = "Penalty Happened", y = "Type of Pass")+
   ggtitle("Penalties based on what Pass Type the play was")+
-  scale_fill_brewer("Pass Type", palette = "BuGr")
+  scale_fill_brewer("Pass Type", palette = "BuGn")
