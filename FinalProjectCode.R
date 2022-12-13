@@ -106,7 +106,7 @@ fp_cleaned$PlayType = factor(fp_cleaned$PlayType,
                              labels = c("Pass", "Rush", "Scramble", "Two Point Conversion"))
 
 
-#Exploratory Plots For Rush and Pass Type (Evan)----
+#Exploratory Plots For Rush and Pass Type----
 ggplot(data = fp_cleaned) +
   geom_bar(aes(x = PlayType))
 
@@ -116,6 +116,9 @@ fp_cleaned %>%
   filter(RushDirection != "No Rush") %>%
   ggplot(aes(x = RushDirection)) +
   geom_bar()
+#Filter no rush because those plays aren't relevant to 
+#This analysis. It appears that Runners prefer to run
+#Up the middle of the offensive line
 
 #Examine the above plot again, but fill based on the play scoring in the endzone
 fp_cleaned %>%
@@ -125,13 +128,21 @@ fp_cleaned %>%
   ggtitle("Distribution of Rush Directions Accross the Offensive Line") + 
   scale_fill_grey("Outcome of \nthe Play") +
   geom_bar()
-
+#Looking at this plot shows that plays that are ran on the 
+#Left side of the offensive line are better in terms of 
+#Scoring frequency. This could be because better offensive
+#Linemen are needed on that side to protect the quarterback's 
+#Blindside, as most of them are right handed.
 
 #Get a feel for passing frequencies
 fp_cleaned %>%
   filter(PassType != "No Pass") %>%
   ggplot(aes(x = PassType)) + 
   geom_bar()
+#This plot shows that Deep passes are generaly less common
+#Than the short variants. This is likely because there is more
+#Risk involved in throwing a deep ball than just incrementally
+#Movintg down the field
 
 #Group by scoring again
 fp_cleaned %>%
@@ -141,8 +152,12 @@ fp_cleaned %>%
   ggtitle("Distribution of Pass Types on Passing Plays") +
   scale_fill_grey("Outcome of \nthe Play") +
   geom_bar()
+#This plot shows that Deep passes to the right are most effective
+#In terms of Scoring, This Could be because most quarterbacks are right
+#Handed and they are better suited for making good passes down the 
+#Right side of the field instead of throwing across their bodies
 
-#Exploratory Plots 
+#Exploratory Plots for Yards Gained-----
 
 #Plots with Yards
 #Scores based on how many yards the play gained
@@ -271,6 +286,8 @@ mtry = c(1:18)
 keeps = data.frame(m = rep(NA, length(mtry)),
                    OOB_error_rate = rep(NA, length(mtry)))
 
+#Iterate over all of the possible mtry values and 
+#Construct a forest with 10000 trees for each
 for(idx in 1:length(mtry)){
   print(paste0("Fitting m = ", mtry[idx]))
   tempforest = randomForest(EndzoneScore ~.,
@@ -281,17 +298,20 @@ for(idx in 1:length(mtry)){
   keeps[idx, "OOB_error_rate"] = mean(predict(tempforest) != train.df$EndzoneScore)
 }
 
+#Plot the OOB error rate against the m try value
 ggplot(data = keeps) + 
-  geom_line(aes(x = m, y = OOB_error_rate))
+  geom_line(aes(x = m, y = OOB_error_rate)) +
+  labs(x = "m (Number of Features Used in Random Forest)", y = "OOB Error Rate") +
+  ggtitle("Plot of OOB Error Rate vs. Number of Features Used")
 
-#Using mtry = 12 resulted in the lowest OO
+#Using mtry = 11 resulted in the lowest OOB error Rate
 min(keeps$OOB_error_rate)
 
 #TUNED FOREST
 tunedFpForest = randomForest(EndzoneScore ~.,
                              data = train.df,
                              ntree = 10000,
-                             mtry = 12,
+                             mtry = 11,
                              importance = TRUE)
 
 #Examine the new forest
@@ -303,12 +323,26 @@ pi_hat = predict(tunedFpForest, test.df, type = "prob")[,"Score"]
 rocCurve = roc(response = test.df$EndzoneScore,
                predictor = pi_hat,
                levels = c("No Score", "Score"))
-plot(rocCurve, print.thres = "best", print.auc = TRUE)
+plot(rocCurve, print.thres = "best", print.auc = TRUE, main = "ROC Curve for Random Forest")
 #AUC = .997
 #Pi star = .110
 #Sensitivity = .985
-#Specificity = .982                   
+#Specificity = .982       
 
+
+#Produce an importance plot of the tuned random forest
+varImpPlot(tunedFpForest, type = 1)
+vi = as.data.frame(varImpPlot(tunedFpForest, type = 1))
+vi$Variable <- rownames(vi)
+ggplot(data = vi) + 
+  geom_bar(fill = "#99d8c9", aes(x = reorder(Variable,MeanDecreaseAccuracy), weight = MeanDecreaseAccuracy), 
+           position ="identity") +
+  coord_flip() + 
+  labs( x = "Variable Name",y = "Importance") + 
+  ggtitle("Variable Importance")
+
+#Building GLM based on Important Vars Plot----
+#We are using AIC as our criterion for this model
 fp_cleaned$score_bin = ifelse(fp_cleaned$EndzoneScore == "Score", 1, 0)
 #First model, adding YardLine because it was the #1 variable on variable importance
 m1 = glm(score_bin ~ YardLine, data = fp_cleaned,
@@ -369,8 +403,8 @@ m9 = glm(score_bin~YardLine + SeriesFirstDown + Yards +IsPenalty +
 AIC(m9) #906.9086 #larger than model 8
 
 m10 = glm(score_bin~YardLine + SeriesFirstDown + Yards +IsPenalty +
-           PenaltyYards +ToGo+PassType+IsPenaltyAccepted +IsNoPlay + RushDirection, data = fp_cleaned,
-         family = binomial(link = "logit"))
+            PenaltyYards +ToGo+PassType+IsPenaltyAccepted +IsNoPlay + RushDirection, data = fp_cleaned,
+          family = binomial(link = "logit"))
 AIC(m10) #905.0016 #Both this an the previous are larger than model 8
 
 final_model = glm(score_bin~YardLine + SeriesFirstDown + Yards +IsPenalty +
@@ -386,6 +420,8 @@ df <- m8$df.null - m8$df.residual
 anova(m8, test = "Chisq")
 summary(m8)
 
+
+#Added Visualization of important Vars ----
 ##Yards plots
 ggplot(data = fp_cleaned)+
   geom_histogram(aes(x=Yards, fill = EndzoneScore), position = "fill", binwidth = 5)+
@@ -408,3 +444,75 @@ ggplot(data = fp_cleaned)+
   labs(x = "Penalty Happened", y = "Type of Pass")+
   ggtitle("Penalties based on what Pass Type the play was")+
   scale_fill_brewer("Pass Type", palette = "BuGn")
+
+
+#Investigate the distribution of penalty yards
+#This plot is interesting, extremely skewed to the right.
+#This makes sense though, PI calls can greatly impact a play's success
+fp_cleaned %>%
+  filter(IsPenaltyAccepted == 1) %>%
+  ggplot(aes(x = PenaltyYards)) +
+  geom_histogram(binwidth = 1)
+
+#Attempt to show differences between play types and penalty yards.
+#This is consistent with what I expected to see
+fp_cleaned %>%
+  filter(IsPenaltyAccepted == 1) %>%
+  ggplot(aes(x = PenaltyYards, fill = PlayType)) +
+  geom_histogram(binwidth = 5) + 
+  scale_fill_brewer("Type of\n Play", palette = "BuGn") + 
+  labs(x = "Penalty Yards", y = "Count") +
+  ggtitle("Penalty Yards by Play Type")
+#Add colorblind friendly palette
+fp_cleaned %>%
+  filter(IsPenaltyAccepted == 1) %>%
+  ggplot(aes(x = YardLine, y = PenaltyYards, color = factor(PlayType))) + 
+  geom_point()
+
+
+fp_cleaned %>% 
+  filter(IsPenaltyAccepted == 1) %>%
+  ggplot(aes(x = PenaltyYards))
+
+#I thought that this might show the penalty yards that a penalty might
+#Have been worth even though it was not accepted, this is not the case
+#All yards values where the penalty is not accepted are = to 0.
+#This plot is not helpful
+fp_cleaned %>% 
+  filter(IsPenalty == 1 & IsPenaltyAccepted == 0) %>%
+  ggplot(aes(x = PenaltyYards)) + 
+  geom_histogram(binwidth = 5)
+
+
+#Take a look at the frequency of yds to go
+#This plot is not helpful, the majority of
+#Observations are of plays with ToGo = 10. 
+#This makes sense because when a 1st down is 
+#gained, the next play starts with 10 yds to go
+fp_cleaned %>%
+  ggplot(aes(x = ToGo)) + 
+  geom_histogram(binwidth = 1)
+
+#Look at subsets of plays with < 10 yds to go and > 10 yds to go
+fp_cleaned %>%
+  filter(ToGo < 10) %>%
+  ggplot(aes(x = ToGo)) + 
+  geom_histogram(binwidth = 1)
+
+#Add labels and a different color palette
+fp_cleaned %>%
+  filter(ToGo < 10) %>%
+  ggplot(aes(x = ToGo, fill = PlayType)) + 
+  geom_histogram(binwidth = 1) + 
+  scale_fill_brewer("Type of\n Play", palette = "BuGn") +
+  labs(x = "Distance Until 1st Down", y = "Count") +
+  ggtitle("Distribution of Yards Until 1st Down Gained (< 10 Yards to Go)")
+
+#Add labels and a different color palette
+fp_cleaned %>%
+  filter(ToGo > 10) %>%
+  ggplot(aes(x = ToGo, fill = PlayType)) + 
+  geom_histogram(binwidth = 5) + 
+  scale_fill_brewer("Type of\n Play", palette = "BuGn") +
+  labs(x = "Distance Until 1st Down", y = "Count") +
+  ggtitle("Distribution of Yards Until 1st Down Gained (
