@@ -4,7 +4,7 @@ Final Project for Stat172 Fall 2022
 
   In this project, we take a deep dive into NFL play data from the 2021-2022 season. The goal was to figure out what factors of offensive plays cause more scores in the endzone. The main objective of an offensive coach is to score more points and scoring in the endzone is the most effiecient way of doing so. Instead of just looking at touchdowns, we looked at all endzone scores which included two-point conversions. Our logic was that if a play was effective at getting into the endzone from the 3 yard line after a touchdown is scored, it should be just as effective as the touchdown scoring play from the 3 yard line. 
 
-    We completed this investigation in the latest version of R and Rstudio using the dplyr, ggplot2, rpart, rpart.plot, pROC, and randomForest. We first cleaned the data (specificed later exactly what we did) then we built a random forest and importance chart. That was followed by a glm and more exploratory analysis.
+   We completed this investigation in the latest version of R and Rstudio using the dplyr, ggplot2, rpart, rpart.plot, pROC, and randomForest. We first cleaned the data (specificed later exactly what we did) then we built a random forest and importance chart. That was followed by a glm and more exploratory analysis.
 
   The data we found was from nflsavant.com and is the play data from the 2021-2022 season. Before cleaning it has 42,796 observations with 45 variables.
 
