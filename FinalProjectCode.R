@@ -6,6 +6,7 @@ library(rpart)
 library(rpart.plot)
 library(pROC)
 library(randomForest)
+library(RColorBrewer)
 
 #Read the data for our project into R so we can examine the columns
 fp = read.csv("pbp-2021.csv", stringsAsFactors = TRUE)
@@ -115,7 +116,13 @@ ggplot(data = fp_cleaned) +
 fp_cleaned %>%
   filter(RushDirection != "No Rush") %>%
   ggplot(aes(x = RushDirection)) +
-  geom_bar()
+  ggtitle("Distribution of Rushing Directions") + 
+  labs(x = "Rush Direction", y = "Number of Plays")+
+  geom_bar(fill = "#99d8c9")
+
+
+#Add labels
+
 #Filter no rush because those plays aren't relevant to 
 #This analysis. It appears that Runners prefer to run
 #Up the middle of the offensive line
@@ -128,6 +135,15 @@ fp_cleaned %>%
   ggtitle("Distribution of Rush Directions Accross the Offensive Line") + 
   scale_fill_grey("Outcome of \nthe Play") +
   geom_bar()
+
+#Add a colorblind friendly palette
+fp_cleaned %>%
+  filter(RushDirection != "No Rush") %>%
+  ggplot(aes(x = RushDirection, fill = EndzoneScore)) +
+  labs(x = "Rush Direction", y = "Frequency") +
+  ggtitle("Distribution of Rush Directions Accross the Offensive Line") + 
+  scale_fill_brewer("Outcome of \nthe Play", palette = "BuGn") +
+  geom_bar(position = "fill")
 #Looking at this plot shows that plays that are ran on the 
 #Left side of the offensive line are better in terms of 
 #Scoring frequency. This could be because better offensive
@@ -139,6 +155,15 @@ fp_cleaned %>%
   filter(PassType != "No Pass") %>%
   ggplot(aes(x = PassType)) + 
   geom_bar()
+
+fp_cleaned %>%
+  filter(PassType != "No Pass") %>%
+  ggplot(aes(x = PassType, fill = EndzoneScore)) +
+  labs(x = "Type of Pass", y = "Number of plays") +
+  ggtitle("Distribution of Pass Types") + 
+  geom_bar(fill = "#99d8c9")
+
+
 #This plot shows that Deep passes are generaly less common
 #Than the short variants. This is likely because there is more
 #Risk involved in throwing a deep ball than just incrementally
@@ -150,8 +175,10 @@ fp_cleaned %>%
   ggplot(aes(x = PassType, fill = EndzoneScore), position = "fill") + 
   labs(x = "Pass Type", y = "Frequency") +
   ggtitle("Distribution of Pass Types on Passing Plays") +
-  scale_fill_grey("Outcome of \nthe Play") +
-  geom_bar()
+  scale_fill_brewer("Outcome of \nthe Play", palette = "BuGn") +
+  geom_bar(position = "fill")
+
+
 #This plot shows that Deep passes to the right are most effective
 #In terms of Scoring, This Could be because most quarterbacks are right
 #Handed and they are better suited for making good passes down the 
@@ -216,6 +243,23 @@ ggplot(data = fp_cleaned)+
 #The interesting aspect of this graph is that a large portion of plays run from
 #inside about the 10 yard line score. There is also an interesting increase at about the 
 #20 yard line compared to about the 15 yard line, the trend almost seems exponential
+
+
+#Plot the number of plays that were run at each yard line, Look at 
+#Those that scored independently of those that did not score
+fp_cleaned %>%
+  filter(EndzoneScore == "Score") %>%
+  ggplot(aes(x = YardLine)) +
+  ggtitle("Scoring Based on yard Line Position")+
+  labs(x = "Yard Line Position", y = "Number of Plays") +
+  geom_bar(fill = "#99d8c9") 
+
+fp_cleaned %>%
+  filter(EndzoneScore == "No Score") %>%
+  ggplot(aes(x = YardLine)) +
+  ggtitle("Yard Line Position on Non-Scoring Plays")+
+  labs(x = "Yard Line Position", y = "Number of Plays") +
+  geom_bar(fill = "#99d8c9")
 
 #Time
 #Score by time during the game
@@ -325,9 +369,9 @@ rocCurve = roc(response = test.df$EndzoneScore,
                levels = c("No Score", "Score"))
 plot(rocCurve, print.thres = "best", print.auc = TRUE, main = "ROC Curve for Random Forest")
 #AUC = .997
-#Pi star = .110
-#Sensitivity = .985
-#Specificity = .982       
+#Pi star = .088
+#Sensitivity = .977
+#Specificity = .985       
 
 
 #Produce an importance plot of the tuned random forest
@@ -515,4 +559,4 @@ fp_cleaned %>%
   geom_histogram(binwidth = 5) + 
   scale_fill_brewer("Type of\n Play", palette = "BuGn") +
   labs(x = "Distance Until 1st Down", y = "Count") +
-  ggtitle("Distribution of Yards Until 1st Down Gained (
+  ggtitle("Distribution of Yards Until 1st Down Gained")
